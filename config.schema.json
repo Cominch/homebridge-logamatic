@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "Logamatic",
   "pluginType": "platform",
   "singular": true,
   "schema": {
@@ -9,7 +9,37 @@
         "title": "Name",
         "type": "string",
         "required": true,
-        "default": "Example Dynamic Platform"
+        "default": "Logamatic"
+      },
+      "url": {
+        "title": "URL",
+        "type": "string",
+        "required": true,
+        "default": "http://0.0.0.0:80"
+      },
+      "gatewayPassword": {
+        "title": "Gateway Password",
+        "type": "string",
+        "required": true,
+        "default": "abcd-abcd-abcd-abcd"
+      },
+      "privatePassword": {
+        "title": "Private Password",
+        "type": "string",
+        "required": true,
+        "default": "password"
+      },
+      "heaterCircuit": {
+        "title": "Heater Circuit",
+        "type": "string",
+        "required": true,
+        "default": "hc1"
+      },
+      "waterCircuit": {
+        "title": "Water Circuit",
+        "type": "string",
+        "required": true,
+        "default": "dhw1"
       }
     }
   }
