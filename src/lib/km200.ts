@@ -10,6 +10,14 @@ const km200_crypt_md5_salt = new Uint8Array([
   0xff, 0xd8, 0x42, 0xe9, 0x89, 0x5a, 0xd1, 0xe4,
 ]);
 
+const timeout = (ms, message) => {
+  return new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(message));
+    }, ms);
+  });
+};
+
 export class KM200 {
   aesKey: number[];
   options: unknown;
@@ -92,22 +100,25 @@ export class KM200 {
       },
     };
 
-    return await fetch(this.accessUrl + '/' + service, this.options)
-      .then(data => data.text())
-      .then(data => {
-        const b = Buffer.from(data, 'base64');
-        try {
-          let s = Array.from(b);
-          s = mcrypt.decrypt(s, null, this.aesKey, 'rijndael-128', 'ecb');
-          const s2 = Buffer.from(s).toString('utf8');
+    return await Promise.race([
+      timeout(2500, 'Timeout while fetching data from KM200.'),
+      fetch(this.accessUrl + '/' + service, this.options)
+        .then(data => data.text())
+        .then(data => {
+          const b = Buffer.from(data, 'base64');
+          try {
+            let s = Array.from(b);
+            s = mcrypt.decrypt(s, null, this.aesKey, 'rijndael-128', 'ecb');
+            const s2 = Buffer.from(s).toString('utf8');
 
-          const j = JSON.parse(s2);
-          return j;
-        // eslint-disable-next-line no-empty
-        } catch (e) {
-          return undefined;
-        }
-      });
+            const j = JSON.parse(s2);
+            return j;
+            // eslint-disable-next-line no-empty
+          } catch (e) {
+            return undefined;
+          }
+        }),
+    ]);
   }
 
   async set(service: string, value: unknown) {
@@ -133,7 +144,10 @@ export class KM200 {
       },
     };
 
-    return await fetch(this.accessUrl + '/' + service, this.options)
-      .then(data => data.text());
+    return await Promise.race([
+      timeout(500, 'Timeout while sending data to KM200.'),
+      fetch(this.accessUrl + '/' + service, this.options)
+        .then(data => data.text()),
+    ]);
   }
 }

@@ -1,5 +1,6 @@
 import {
   AccessoryPlugin,
+  CharacteristicValue,
   HAP,
   Logging,
   PlatformConfig,
@@ -73,7 +74,7 @@ export class LogamaticHeater implements AccessoryPlugin {
             }
           })
       ))
-      .onSet(async (value) => {
+      .onSet(async (value: CharacteristicValue) => {
         let targetValue = 'manual';
         let targetTemperature = 0;
 
@@ -93,7 +94,7 @@ export class LogamaticHeater implements AccessoryPlugin {
 
         await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/operationMode`, targetValue);
 
-        if (value < 3) {
+        if (value as number < 3) {
           await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`, targetTemperature);
         }
 
