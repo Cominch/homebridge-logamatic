@@ -8,6 +8,7 @@ import {
 } from 'homebridge';
 
 import {KM200} from './lib/km200';
+import { allowedNodeEnvironmentFlags } from 'process';
 
 export class LogamaticHeater implements AccessoryPlugin {
 
@@ -40,6 +41,9 @@ export class LogamaticHeater implements AccessoryPlugin {
     this.characteristic = hap.Characteristic;
 
     this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState)
+      .setProps({
+        validValues: [0, 1, 2],
+      })
       .onGet(async () => (
         await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
           .then(data => {
@@ -50,9 +54,11 @@ export class LogamaticHeater implements AccessoryPlugin {
               const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`);
               return manualRoomSetpointResponse['value'] === 0 ? 0 : 1;
             } else {
-              return 3;
+              return 2;
             }
           })
+          .catch((error) => { return null })
+          
       ));
 
     this.thermostatService
@@ -73,6 +79,7 @@ export class LogamaticHeater implements AccessoryPlugin {
               return 3;
             }
           })
+          .catch((error) => { return null })
       ))
       .onSet(async (value: CharacteristicValue) => {
         let targetValue = 'manual';
@@ -98,7 +105,7 @@ export class LogamaticHeater implements AccessoryPlugin {
           await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`, targetTemperature);
         }
 
-        this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value);
+        this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value === 3 ? 2 : value);
         this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature).updateValue(targetTemperature);
       });
 
@@ -106,7 +113,9 @@ export class LogamaticHeater implements AccessoryPlugin {
       .onGet(async () => (await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`)
         .then(data => {
           return data['value'];
-        })),
+        }).catch((error) => { return null })
+        )
+        ,
       );
 
     this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature)
@@ -129,7 +138,7 @@ export class LogamaticHeater implements AccessoryPlugin {
               return manualRoomSetpointResponse['value'];
             }
           })
-
+          .catch((error) => { return null })
       ))
       .onSet(async (value) => (
         await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
@@ -143,6 +152,7 @@ export class LogamaticHeater implements AccessoryPlugin {
               await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/temporaryRoomSetpoint`, value);
             }
           })
+          .catch((error) => { return null })
       ));
 
     this.informationService = new hap.Service.AccessoryInformation()

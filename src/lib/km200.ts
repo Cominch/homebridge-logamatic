@@ -84,12 +84,12 @@ export class KM200 {
     };
   }
 
-  async get(service: string) {
+  async getAlways(service: string) {
     this.options = {
-      timeout: 2500,
+      timeout: 1000,
       method: 'GET',
-      retry: 5,
-      pause: 500,
+      retry: 50,
+      pause: 1000,
       silent: true,
       status: [200],
       encoding: 'utf8',
@@ -101,7 +101,7 @@ export class KM200 {
     };
 
     return await Promise.race([
-      timeout(2500, 'Timeout while fetching data from KM200.'),
+      timeout(50000, `Timeout while fetching data from KM200 (${service}).`),
       fetch(this.accessUrl + '/' + service, this.options)
         .then(data => data.text())
         .then(data => {
@@ -115,9 +115,46 @@ export class KM200 {
             return j;
             // eslint-disable-next-line no-empty
           } catch (e) {
-            return undefined;
+            throw(e);
           }
-        }),
+        })
+    ]);
+  }
+
+  async get(service: string) {
+    this.options = {
+      timeout: 500,
+      method: 'GET',
+      retry: 10,
+      pause: 500,
+      silent: true,
+      status: [200],
+      encoding: 'utf8',
+      headers: {
+        'agent': 'TeleHeater/2.2.3',
+        'User-Agent': 'TeleHeater/2.2.3',
+        'Accept': 'application/json',
+      },
+    };
+
+    return await Promise.race([
+      timeout(5000, `Timeout while fetching data from KM200 (${service}).`),
+      fetch(this.accessUrl + '/' + service, this.options)
+        .then(data => data.text())
+        .then(data => {
+          const b = Buffer.from(data, 'base64');
+          try {
+            let s = Array.from(b);
+            s = mcrypt.decrypt(s, null, this.aesKey, 'rijndael-128', 'ecb');
+            const s2 = Buffer.from(s).toString('utf8');
+
+            const j = JSON.parse(s2);
+            return j;
+            // eslint-disable-next-line no-empty
+          } catch (e) {
+            throw(e);
+          }
+        })
     ]);
   }
 
