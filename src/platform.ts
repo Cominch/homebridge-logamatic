@@ -32,15 +32,14 @@ export class LogamaticPlatform implements StaticPlatformPlugin {
    * The set of exposed accessories CANNOT change over the lifetime of the plugin!
    */
   accessories(callback: (foundAccessories: AccessoryPlugin[]) => void): void {
-    this.km200.get('system/healthStatus')
-      .then(logamaticConfiguration => {
+    this.km200.getAlways('system/healthStatus')
+      .finally(() => {
         callback([
           new LogamaticHeater(
             this.hap,
             this.log,
             'Heater',
             this.config,
-            logamaticConfiguration,
             this.km200,
           ),
           new LogamaticWater(
@@ -48,13 +47,9 @@ export class LogamaticPlatform implements StaticPlatformPlugin {
             this.log,
             'Water Boiler',
             this.config,
-            logamaticConfiguration,
             this.km200,
           ),
         ]);
-      })
-      .catch(e => {
-        this.log.error(e);
       });
   }
 }

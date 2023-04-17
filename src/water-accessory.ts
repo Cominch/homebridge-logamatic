@@ -18,21 +18,17 @@ export class LogamaticWater implements AccessoryPlugin {
   private characteristic: HAP['Characteristic'];
 
   name: string;
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  logamaticConfiguration: Object;
 
   private readonly thermostatService: Service;
   private readonly informationService: Service;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, logamaticConfiguration: Object, km200: KM200) {
+  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, km200: KM200) {
     this.log = log;
     this.name = name;
     this.config = config;
 
     this.timeoutId = undefined;
-
-    this.logamaticConfiguration = logamaticConfiguration;
 
     this.km200 = km200;
 
@@ -41,26 +37,32 @@ export class LogamaticWater implements AccessoryPlugin {
     this.characteristic = hap.Characteristic;
 
     this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState)
-      .onGet(async () => (await this.km200.get(`dhwCircuits/${this.config.waterCircuit}/operationMode`)
-        .then(data => {
-          const currentValue = data['value'];
+      .setProps({
+        validValues: [0, 1, 2],
+      })
+      .onGet(async () => (
+        await this.km200.get(`dhwCircuits/${this.config.waterCircuit}/operationMode`)
+          .then(data => {
+            const currentValue = data['value'];
 
-          let value = 0;
+            let value = 0;
 
-          switch (currentValue) {
-            case 'Off': value = 0;
-              break;
-            case 'high': value = 1;
-              break;
-            case 'HCprogram': value = 3;
-              break;
-            case 'ownprogram': value = 3;
-              break;
-            default: value = 0;
-          }
+            switch (currentValue) {
+              case 'Off': value = 0;
+                break;
+              case 'high': value = 1;
+                break;
+              case 'HCprogram': value = 2;
+                break;
+              case 'ownprogram': value = 2;
+                break;
+              default: value = 0;
+            }
 
-          return value;
-        })));
+            return value;
+          })
+          .catch((error) => { return null })
+      ));
 
     this.thermostatService
       .getCharacteristic(hap.Characteristic.TargetHeatingCoolingState)
@@ -88,6 +90,7 @@ export class LogamaticWater implements AccessoryPlugin {
 
             return value;
           })
+          .catch((error) => { return null })
       ))
       .onSet(async (value) => {
         let targetValue = 'Off';
@@ -104,16 +107,18 @@ export class LogamaticWater implements AccessoryPlugin {
 
         await this.km200.set(`dhwCircuits/${this.config.waterCircuit}/operationMode`, targetValue);
 
-        this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value);
+        this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value === 3 ? 2 : value);
         await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest();
       });
 
     this.thermostatService.getCharacteristic(hap.Characteristic.CurrentTemperature)
-      .onGet(async () => (await this.km200.get(`dhwCircuits/${this.config.waterCircuit}/actualTemp`)
-        .then(data => {
-          return data['value'];
-        })),
-      );
+      .onGet(async () => (
+        await this.km200.get(`dhwCircuits/${this.config.waterCircuit}/actualTemp`)
+          .then(data => {
+            return data['value'];
+          })
+          .catch((error) => { return null })
+      ));
 
     this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature)
       .setProps({
@@ -145,6 +150,7 @@ export class LogamaticWater implements AccessoryPlugin {
           .then(data => {
             return data['value'];
           })
+          .catch((error) => { return null })
       ))
       .onSet(async (value) => (await this.km200.set(`dhwCircuits/${this.config.waterCircuit}/temperatureLevels/high`, value)));
 

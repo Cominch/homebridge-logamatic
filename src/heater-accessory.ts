@@ -1,5 +1,6 @@
 import {
   AccessoryPlugin,
+  CharacteristicValue,
   HAP,
   Logging,
   PlatformConfig,
@@ -7,6 +8,7 @@ import {
 } from 'homebridge';
 
 import {KM200} from './lib/km200';
+import { allowedNodeEnvironmentFlags } from 'process';
 
 export class LogamaticHeater implements AccessoryPlugin {
 
@@ -18,19 +20,15 @@ export class LogamaticHeater implements AccessoryPlugin {
   private characteristic: HAP['Characteristic'];
 
   name: string;
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  logamaticConfiguration: Object;
 
   private readonly thermostatService: Service;
   private readonly informationService: Service;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, logamaticConfiguration: Object, km200: KM200) {
+  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, km200: KM200) {
     this.log = log;
     this.name = name;
     this.config = config;
-
-    this.logamaticConfiguration = logamaticConfiguration;
 
     this.km200 = km200;
 
@@ -39,6 +37,9 @@ export class LogamaticHeater implements AccessoryPlugin {
     this.characteristic = hap.Characteristic;
 
     this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState)
+      .setProps({
+        validValues: [0, 1, 2],
+      })
       .onGet(async () => (
         await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
           .then(data => {
@@ -49,9 +50,11 @@ export class LogamaticHeater implements AccessoryPlugin {
               const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`);
               return manualRoomSetpointResponse['value'] === 0 ? 0 : 1;
             } else {
-              return 3;
+              return 2;
             }
           })
+          .catch((error) => { return null })
+          
       ));
 
     this.thermostatService
@@ -72,8 +75,9 @@ export class LogamaticHeater implements AccessoryPlugin {
               return 3;
             }
           })
+          .catch((error) => { return null })
       ))
-      .onSet(async (value) => {
+      .onSet(async (value: CharacteristicValue) => {
         let targetValue = 'manual';
         let targetTemperature = 0;
 
@@ -93,11 +97,11 @@ export class LogamaticHeater implements AccessoryPlugin {
 
         await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/operationMode`, targetValue);
 
-        if (value < 3) {
+        if (value as number < 3) {
           await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`, targetTemperature);
         }
 
-        this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value);
+        this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value === 3 ? 2 : value);
         this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature).updateValue(targetTemperature);
       });
 
@@ -105,7 +109,9 @@ export class LogamaticHeater implements AccessoryPlugin {
       .onGet(async () => (await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`)
         .then(data => {
           return data['value'];
-        })),
+        }).catch((error) => { return null })
+        )
+        ,
       );
 
     this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature)
@@ -128,7 +134,7 @@ export class LogamaticHeater implements AccessoryPlugin {
               return manualRoomSetpointResponse['value'];
             }
           })
-
+          .catch((error) => { return null })
       ))
       .onSet(async (value) => (
         await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
@@ -142,6 +148,7 @@ export class LogamaticHeater implements AccessoryPlugin {
               await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/temporaryRoomSetpoint`, value);
             }
           })
+          .catch((error) => { return null })
       ));
 
     this.informationService = new hap.Service.AccessoryInformation()

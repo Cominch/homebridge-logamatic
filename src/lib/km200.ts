@@ -10,6 +10,14 @@ const km200_crypt_md5_salt = new Uint8Array([
   0xff, 0xd8, 0x42, 0xe9, 0x89, 0x5a, 0xd1, 0xe4,
 ]);
 
+const timeout = (ms, message) => {
+  return new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(message));
+    }, ms);
+  });
+};
+
 export class KM200 {
   aesKey: number[];
   options: unknown;
@@ -76,11 +84,48 @@ export class KM200 {
     };
   }
 
+  async getAlways(service: string) {
+    this.options = {
+      timeout: 1000,
+      method: 'GET',
+      retry: 50,
+      pause: 1000,
+      silent: true,
+      status: [200],
+      encoding: 'utf8',
+      headers: {
+        'agent': 'TeleHeater/2.2.3',
+        'User-Agent': 'TeleHeater/2.2.3',
+        'Accept': 'application/json',
+      },
+    };
+
+    return await Promise.race([
+      timeout(50000, `Timeout while fetching data from KM200 (${service}).`),
+      fetch(this.accessUrl + '/' + service, this.options)
+        .then(data => data.text())
+        .then(data => {
+          const b = Buffer.from(data, 'base64');
+          try {
+            let s = Array.from(b);
+            s = mcrypt.decrypt(s, null, this.aesKey, 'rijndael-128', 'ecb');
+            const s2 = Buffer.from(s).toString('utf8');
+
+            const j = JSON.parse(s2);
+            return j;
+            // eslint-disable-next-line no-empty
+          } catch (e) {
+            throw(e);
+          }
+        })
+    ]);
+  }
+
   async get(service: string) {
     this.options = {
-      timeout: 2500,
+      timeout: 500,
       method: 'GET',
-      retry: 5,
+      retry: 10,
       pause: 500,
       silent: true,
       status: [200],
@@ -92,22 +137,25 @@ export class KM200 {
       },
     };
 
-    return await fetch(this.accessUrl + '/' + service, this.options)
-      .then(data => data.text())
-      .then(data => {
-        const b = Buffer.from(data, 'base64');
-        try {
-          let s = Array.from(b);
-          s = mcrypt.decrypt(s, null, this.aesKey, 'rijndael-128', 'ecb');
-          const s2 = Buffer.from(s).toString('utf8');
+    return await Promise.race([
+      timeout(5000, `Timeout while fetching data from KM200 (${service}).`),
+      fetch(this.accessUrl + '/' + service, this.options)
+        .then(data => data.text())
+        .then(data => {
+          const b = Buffer.from(data, 'base64');
+          try {
+            let s = Array.from(b);
+            s = mcrypt.decrypt(s, null, this.aesKey, 'rijndael-128', 'ecb');
+            const s2 = Buffer.from(s).toString('utf8');
 
-          const j = JSON.parse(s2);
-          return j;
-        // eslint-disable-next-line no-empty
-        } catch (e) {
-          return undefined;
-        }
-      });
+            const j = JSON.parse(s2);
+            return j;
+            // eslint-disable-next-line no-empty
+          } catch (e) {
+            throw(e);
+          }
+        })
+    ]);
   }
 
   async set(service: string, value: unknown) {
@@ -133,7 +181,10 @@ export class KM200 {
       },
     };
 
-    return await fetch(this.accessUrl + '/' + service, this.options)
-      .then(data => data.text());
+    return await Promise.race([
+      timeout(500, 'Timeout while sending data to KM200.'),
+      fetch(this.accessUrl + '/' + service, this.options)
+        .then(data => data.text()),
+    ]);
   }
 }
