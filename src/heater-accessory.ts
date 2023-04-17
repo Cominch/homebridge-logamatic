@@ -20,19 +20,15 @@ export class LogamaticHeater implements AccessoryPlugin {
   private characteristic: HAP['Characteristic'];
 
   name: string;
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  logamaticConfiguration: Object;
 
   private readonly thermostatService: Service;
   private readonly informationService: Service;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, logamaticConfiguration: Object, km200: KM200) {
+  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, km200: KM200) {
     this.log = log;
     this.name = name;
     this.config = config;
-
-    this.logamaticConfiguration = logamaticConfiguration;
 
     this.km200 = km200;
 
