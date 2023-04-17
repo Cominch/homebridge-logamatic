@@ -61,7 +61,9 @@ export class LogamaticWater implements AccessoryPlugin {
 
             return value;
           })
-          .catch((error) => { return null })
+          .catch(() => {
+            return null;
+          })
       ));
 
     this.thermostatService
@@ -90,7 +92,9 @@ export class LogamaticWater implements AccessoryPlugin {
 
             return value;
           })
-          .catch((error) => { return null })
+          .catch(() => {
+            return null;
+          })
       ))
       .onSet(async (value) => {
         let targetValue = 'Off';
@@ -117,7 +121,9 @@ export class LogamaticWater implements AccessoryPlugin {
           .then(data => {
             return data['value'];
           })
-          .catch((error) => { return null })
+          .catch(() => {
+            return null;
+          })
       ));
 
     this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature)
@@ -150,7 +156,9 @@ export class LogamaticWater implements AccessoryPlugin {
           .then(data => {
             return data['value'];
           })
-          .catch((error) => { return null })
+          .catch(() => {
+            return null;
+          })
       ))
       .onSet(async (value) => (await this.km200.set(`dhwCircuits/${this.config.waterCircuit}/temperatureLevels/high`, value)));
 
