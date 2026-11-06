@@ -16,8 +16,6 @@ export class LogamaticPressure implements AccessoryPlugin {
   private readonly hap: HAP;
   private readonly km200: KM200;
 
-  private timeoutId: NodeJS.Timeout | undefined;
-
   name: string;
 
   private readonly pressureService: Service;
@@ -27,8 +25,6 @@ export class LogamaticPressure implements AccessoryPlugin {
     this.log = log;
     this.hap = hap;
     this.name = name;
-
-    this.timeoutId = undefined;
 
     this.km200 = km200;
 
@@ -69,7 +65,7 @@ export class LogamaticPressure implements AccessoryPlugin {
 
     log.info('Logamatic \'%s\' created!', name);
 
-    this.refreshTimeout();
+    this.km200.onPoll(() => this.refresh());
   }
 
   /*
@@ -91,15 +87,9 @@ export class LogamaticPressure implements AccessoryPlugin {
     ];
   }
 
-  refreshTimeout() {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-    }
-    this.timeoutId = setTimeout(async () => {
-      // A failed read must not end the refresh cycle
-      await this.pressureService.getCharacteristic(this.hap.Characteristic.CurrentTemperature).handleGetRequest()
-        .catch(() => undefined);
-      this.refreshTimeout();
-    }, 60000);
+  private async refresh() {
+    // A failed read must not end the refresh cycle
+    await this.pressureService.getCharacteristic(this.hap.Characteristic.CurrentTemperature).handleGetRequest()
+      .catch(() => undefined);
   }
 }

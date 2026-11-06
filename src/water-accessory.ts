@@ -14,7 +14,6 @@ export class LogamaticWater implements AccessoryPlugin {
   private readonly config: PlatformConfig;
   private readonly km200: KM200;
 
-  private timeoutId: NodeJS.Timeout | undefined;
   private characteristic: HAP['Characteristic'];
 
   name: string;
@@ -27,8 +26,6 @@ export class LogamaticWater implements AccessoryPlugin {
     this.log = log;
     this.name = name;
     this.config = config;
-
-    this.timeoutId = undefined;
 
     this.km200 = km200;
 
@@ -174,7 +171,7 @@ export class LogamaticWater implements AccessoryPlugin {
 
     log.info('Logamatic \'%s\' created!', name);
 
-    this.refreshTimeout();
+    this.km200.onPoll(() => this.refresh());
   }
 
   /*
@@ -196,17 +193,11 @@ export class LogamaticWater implements AccessoryPlugin {
     ];
   }
 
-  refreshTimeout() {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-    }
-    this.timeoutId = setTimeout(async () => {
-      // A failed read must not end the refresh cycle
-      await this.thermostatService.getCharacteristic(this.characteristic.TargetHeatingCoolingState).handleGetRequest()
-        .catch(() => undefined);
-      await this.thermostatService.getCharacteristic(this.characteristic.CurrentTemperature).handleGetRequest().catch(() => undefined);
-      await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest().catch(() => undefined);
-      this.refreshTimeout();
-    }, 20000);
+  private async refresh() {
+    // A failed read must not end the refresh cycle
+    await this.thermostatService.getCharacteristic(this.characteristic.TargetHeatingCoolingState).handleGetRequest()
+      .catch(() => undefined);
+    await this.thermostatService.getCharacteristic(this.characteristic.CurrentTemperature).handleGetRequest().catch(() => undefined);
+    await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest().catch(() => undefined);
   }
 }

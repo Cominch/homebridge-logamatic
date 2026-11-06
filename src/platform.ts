@@ -4,8 +4,12 @@ import {LogamaticHeater} from './heater-accessory';
 import {LogamaticWater} from './water-accessory';
 import {LogamaticSolar} from './solar-accessory';
 import {LogamaticPressure} from './pressure-accessory';
+import {LogamaticOutdoor} from './outdoor-accessory';
 
 import {KM200} from './lib/km200';
+
+const DEFAULT_POLL_INTERVAL_SECONDS = 20;
+const MIN_POLL_INTERVAL_SECONDS = 5;
 
 export class LogamaticPlatform implements StaticPlatformPlugin {
 
@@ -41,13 +45,14 @@ export class LogamaticPlatform implements StaticPlatformPlugin {
       })
       .finally(() => {
         const accessories: AccessoryPlugin[] = [
-          new LogamaticHeater(
+          ...this.heaterCircuits().map((circuit, index) => new LogamaticHeater(
             this.hap,
             this.log,
-            'Heater',
-            this.config,
+            // The first circuit keeps its name, HomeKit identifies an accessory by it
+            index === 0 ? 'Heater' : `Heater ${circuit}`,
+            circuit,
             this.km200,
-          ),
+          )),
           new LogamaticWater(
             this.hap,
             this.log,
@@ -76,7 +81,41 @@ export class LogamaticPlatform implements StaticPlatformPlugin {
           ));
         }
 
+        if (this.config.outdoorTemperature) {
+          accessories.push(new LogamaticOutdoor(
+            this.hap,
+            this.log,
+            'Outdoor Temperature',
+            this.km200,
+          ));
+        }
+
         callback(accessories);
+
+        this.km200.startPolling(this.pollIntervalSeconds());
       });
+  }
+
+  private heaterCircuits(): string[] {
+    const circuits = Array.isArray(this.config.heaterCircuits) && this.config.heaterCircuits.length > 0
+      ? this.config.heaterCircuits
+      : [this.config.heaterCircuit];
+
+    return Array.from(new Set<string>(circuits));
+  }
+
+  private pollIntervalSeconds(): number {
+    const seconds = this.config.pollInterval ?? DEFAULT_POLL_INTERVAL_SECONDS;
+
+    if (typeof seconds !== 'number' || !(seconds >= MIN_POLL_INTERVAL_SECONDS)) {
+      this.log.warn(
+        'pollInterval must be a number of at least %d seconds, using %d.',
+        MIN_POLL_INTERVAL_SECONDS,
+        DEFAULT_POLL_INTERVAL_SECONDS,
+      );
+      return DEFAULT_POLL_INTERVAL_SECONDS;
+    }
+
+    return seconds;
   }
 }

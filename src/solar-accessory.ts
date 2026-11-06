@@ -19,8 +19,6 @@ export class LogamaticSolar implements AccessoryPlugin {
   private readonly config: PlatformConfig;
   private readonly km200: KM200;
 
-  private timeoutId: NodeJS.Timeout | undefined;
-
   name: string;
 
   private readonly collectorService: Service;
@@ -32,8 +30,6 @@ export class LogamaticSolar implements AccessoryPlugin {
     this.hap = hap;
     this.name = name;
     this.config = config;
-
-    this.timeoutId = undefined;
 
     this.km200 = km200;
 
@@ -51,7 +47,7 @@ export class LogamaticSolar implements AccessoryPlugin {
 
     log.info('Logamatic \'%s\' created!', name);
 
-    this.refreshTimeout();
+    this.km200.onPoll(() => this.refresh());
   }
 
   private createSensor(name: string, subtype: string, resource: string): Service {
@@ -106,16 +102,10 @@ export class LogamaticSolar implements AccessoryPlugin {
     ];
   }
 
-  refreshTimeout() {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-    }
-    this.timeoutId = setTimeout(async () => {
-      // A failed read must not end the refresh cycle
-      await Promise.all([this.collectorService, this.tankService].map(service =>
-        service.getCharacteristic(this.hap.Characteristic.CurrentTemperature).handleGetRequest().catch(() => undefined),
-      ));
-      this.refreshTimeout();
-    }, 20000);
+  private async refresh() {
+    // A failed read must not end the refresh cycle
+    await Promise.all([this.collectorService, this.tankService].map(service =>
+      service.getCharacteristic(this.hap.Characteristic.CurrentTemperature).handleGetRequest().catch(() => undefined),
+    ));
   }
 }

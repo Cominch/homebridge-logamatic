@@ -35,6 +35,15 @@
         "required": true,
         "default": "hc1"
       },
+      "heaterCircuits": {
+        "title": "Heater Circuits",
+        "type": "array",
+        "required": false,
+        "description": "Optional, e.g. hc1 and hc2. Adds one thermostat per circuit and replaces Heater Circuit.",
+        "items": {
+          "type": "string"
+        }
+      },
       "waterCircuit": {
         "title": "Water Circuit",
         "type": "string",
@@ -52,6 +61,20 @@
         "type": "boolean",
         "required": false,
         "description": "Adds a sensor with the system pressure. HomeKit has no pressure sensor, so the value in bar is shown as a temperature."
+      },
+      "outdoorTemperature": {
+        "title": "Show Outdoor Temperature",
+        "type": "boolean",
+        "required": false,
+        "description": "Adds a temperature sensor with the outdoor temperature."
+      },
+      "pollInterval": {
+        "title": "Poll Interval (seconds)",
+        "type": "integer",
+        "required": false,
+        "minimum": 5,
+        "placeholder": 20,
+        "description": "How often the values are read from the KM200. Default 20, minimum 5."
       }
     }
   }
