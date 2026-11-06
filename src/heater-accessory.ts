@@ -20,6 +20,7 @@ export class LogamaticHeater implements AccessoryPlugin {
 
   private timeoutId: NodeJS.Timeout | undefined;
   private characteristic: HAP['Characteristic'];
+  private useSupplySensor = false;
 
   name: string;
 
@@ -193,20 +194,30 @@ export class LogamaticHeater implements AccessoryPlugin {
   }
 
   private async getSupplyTemperature() {
-    const data = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`)
-      .catch(e => {
-        // Not every KM200 has this resource per circuit and answers with an empty body, a timeout is not a reason to ask again
-        if (e instanceof SyntaxError) {
-          return this.km200.get('system/sensors/temperatures/supply_t1');
-        }
-        throw e;
-      });
+    const data = await this.readSupplyTemperature();
 
     if (data['value'] === SENSOR_OPEN) {
       throw new Error('Supply temperature sensor is missing');
     }
 
     return data['value'];
+  }
+
+  private async readSupplyTemperature() {
+    if (this.useSupplySensor) {
+      return this.km200.get('system/sensors/temperatures/supply_t1');
+    }
+
+    try {
+      return await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`);
+    } catch (e) {
+      // Not every KM200 has this resource per circuit and answers with an empty body, a timeout is not a reason to ask again
+      if (e instanceof SyntaxError) {
+        this.useSupplySensor = true;
+        return this.km200.get('system/sensors/temperatures/supply_t1');
+      }
+      throw e;
+    }
   }
 
   refreshTimeout() {

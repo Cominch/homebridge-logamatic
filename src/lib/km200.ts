@@ -10,6 +10,13 @@ const km200_crypt_md5_salt = new Uint8Array([
   0xff, 0xd8, 0x42, 0xe9, 0x89, 0x5a, 0xd1, 0xe4,
 ]);
 
+// A cached value is returned right away, older than this it gets refreshed in the background
+const CACHE_FRESH_MS = 10000;
+// Older than this a cached value is not used anymore, the read then waits for the KM200
+const CACHE_MAX_AGE_MS = 120000;
+// After a timeout reads fail right away for this long, so they do not pile up in the queue
+const OFFLINE_BACKOFF_MS = 30000;
+
 const timeout = (ms, message) => {
   return new Promise((_, reject) => {
     setTimeout(() => {
@@ -23,6 +30,11 @@ export class KM200 {
   options: unknown;
   log: unknown;
   accessUrl: string;
+
+  private queue: Promise<unknown> = Promise.resolve();
+  private readonly cache = new Map<string, { data: unknown; time: number }>();
+  private readonly pending = new Map<string, Promise<unknown>>();
+  private offlineUntil = 0;
 
   constructor() {
     this.aesKey = []; // buffer will be generated on init from accessKey
@@ -121,7 +133,52 @@ export class KM200 {
     ]);
   }
 
-  async get(service: string) {
+  // The KM200 answers slowly when asked in parallel, so all requests run one after the other
+  private enqueue<T>(request: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(request);
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  private refresh(service: string) {
+    if (Date.now() < this.offlineUntil) {
+      return Promise.reject(new Error(`KM200 is not reachable (${service}).`));
+    }
+
+    let request = this.pending.get(service);
+    if (!request) {
+      request = this.enqueue(() => this.request(service))
+        .then(data => {
+          this.cache.set(service, {data, time: Date.now()});
+          return data;
+        })
+        .catch(e => {
+          if (!(e instanceof SyntaxError)) {
+            this.offlineUntil = Date.now() + OFFLINE_BACKOFF_MS;
+          }
+          throw e;
+        })
+        .finally(() => this.pending.delete(service));
+      this.pending.set(service, request);
+    }
+    return request;
+  }
+
+  async get(service: string): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const cached = this.cache.get(service);
+    const age = cached ? Date.now() - cached.time : Infinity;
+
+    if (cached && age < CACHE_MAX_AGE_MS) {
+      if (age >= CACHE_FRESH_MS) {
+        this.refresh(service).catch(() => undefined);
+      }
+      return cached.data;
+    }
+
+    return this.refresh(service);
+  }
+
+  private async request(service: string) {
     this.options = {
       timeout: 500,
       method: 'GET',
@@ -159,6 +216,12 @@ export class KM200 {
   }
 
   async set(service: string, value: unknown) {
+    const result = await this.enqueue(() => this.post(service, value));
+    this.cache.delete(service);
+    return result;
+  }
+
+  private async post(service: string, value: unknown) {
     const post = JSON.stringify({
       value: value,
     });
