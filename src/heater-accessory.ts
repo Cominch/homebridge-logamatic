@@ -3,20 +3,22 @@ import {
   CharacteristicValue,
   HAP,
   Logging,
-  PlatformConfig,
   Service,
 } from 'homebridge';
 
 import {KM200} from './lib/km200';
 
+// The KM200 reports this value when a sensor is missing
+const SENSOR_OPEN = -3276.8;
+
 export class LogamaticHeater implements AccessoryPlugin {
 
   private readonly log: Logging;
-  private readonly config: PlatformConfig;
+  private readonly circuit: string;
   private readonly km200: KM200;
 
-  private timeoutId: NodeJS.Timeout | undefined;
   private characteristic: HAP['Characteristic'];
+  private useSupplySensor = false;
 
   name: string;
 
@@ -24,10 +26,10 @@ export class LogamaticHeater implements AccessoryPlugin {
   private readonly informationService: Service;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  constructor(hap: HAP, log: Logging, name: string, config: PlatformConfig, km200: KM200) {
+  constructor(hap: HAP, log: Logging, name: string, circuit: string, km200: KM200) {
     this.log = log;
     this.name = name;
-    this.config = config;
+    this.circuit = circuit;
 
     this.km200 = km200;
 
@@ -40,20 +42,20 @@ export class LogamaticHeater implements AccessoryPlugin {
         validValues: [0, 1, 2],
       })
       .onGet(async () => (
-        await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
+        await this.km200.get(`heatingCircuits/${this.circuit}/operationMode`)
           .then(data => {
             return data['value'];
           })
           .then(async (operationMode) => {
             if (operationMode === 'manual') {
-              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`);
+              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.circuit}/manualRoomSetpoint`);
               return manualRoomSetpointResponse['value'] === 0 ? 0 : 1;
             } else {
               return 2;
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
 
       ));
@@ -64,20 +66,20 @@ export class LogamaticHeater implements AccessoryPlugin {
         validValues: [0, 1, 3],
       })
       .onGet(async () => (
-        await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
+        await this.km200.get(`heatingCircuits/${this.circuit}/operationMode`)
           .then(data => {
             return data['value'];
           })
           .then(async (operationMode) => {
             if (operationMode === 'manual') {
-              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`);
+              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.circuit}/manualRoomSetpoint`);
               return manualRoomSetpointResponse['value'] === 0 ? 0 : 1;
             } else {
               return 3;
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
       ))
       .onSet(async (value: CharacteristicValue) => {
@@ -98,10 +100,10 @@ export class LogamaticHeater implements AccessoryPlugin {
           default: targetValue = 'manual';
         }
 
-        await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/operationMode`, targetValue);
+        await this.km200.set(`heatingCircuits/${this.circuit}/operationMode`, targetValue);
 
         if (value as number < 3) {
-          await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`, targetTemperature);
+          await this.km200.set(`heatingCircuits/${this.circuit}/manualRoomSetpoint`, targetTemperature);
         }
 
         this.thermostatService.getCharacteristic(hap.Characteristic.CurrentHeatingCoolingState).updateValue(value === 3 ? 2 : value);
@@ -109,15 +111,11 @@ export class LogamaticHeater implements AccessoryPlugin {
       });
 
     this.thermostatService.getCharacteristic(hap.Characteristic.CurrentTemperature)
-      .onGet(async () => (await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`)
-        .then(data => {
-          return data['value'];
-        }).catch(() => {
-          return null;
+      .onGet(async () => (await this.getSupplyTemperature()
+        .catch(() => {
+          throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
         })
-      )
-        ,
-      );
+      ));
 
     this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature)
       .setProps({
@@ -126,37 +124,37 @@ export class LogamaticHeater implements AccessoryPlugin {
         minStep: 1,
       })
       .onGet(async () => (
-        await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
+        await this.km200.get(`heatingCircuits/${this.circuit}/operationMode`)
           .then(data => {
             return data['value'];
           })
           .then(async (operationMode) => {
             if (operationMode === 'manual') {
-              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`);
+              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.circuit}/manualRoomSetpoint`);
               return manualRoomSetpointResponse['value'];
             } else {
-              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/currentRoomSetpoint`);
+              const manualRoomSetpointResponse = await this.km200.get(`heatingCircuits/${this.circuit}/currentRoomSetpoint`);
               return manualRoomSetpointResponse['value'];
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
       ))
       .onSet(async (value) => (
-        await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/operationMode`)
+        await this.km200.get(`heatingCircuits/${this.circuit}/operationMode`)
           .then(data => {
             return data['value'];
           })
           .then(async (operationMode) => {
             if (operationMode === 'manual') {
-              await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/manualRoomSetpoint`, value);
+              await this.km200.set(`heatingCircuits/${this.circuit}/manualRoomSetpoint`, value);
             } else {
-              await this.km200.set(`heatingCircuits/${this.config.heaterCircuit}/temporaryRoomSetpoint`, value);
+              await this.km200.set(`heatingCircuits/${this.circuit}/temporaryRoomSetpoint`, value);
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
       ));
 
@@ -171,7 +169,7 @@ export class LogamaticHeater implements AccessoryPlugin {
 
     log.info('Logamatic \'%s\' created!', name);
 
-    this.refreshTimeout();
+    this.km200.onPoll(() => this.refresh());
   }
 
   /*
@@ -193,15 +191,38 @@ export class LogamaticHeater implements AccessoryPlugin {
     ];
   }
 
-  refreshTimeout() {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
+  private async getSupplyTemperature() {
+    const data = await this.readSupplyTemperature();
+
+    if (data['value'] === SENSOR_OPEN) {
+      throw new Error('Supply temperature sensor is missing');
     }
-    this.timeoutId = setTimeout(async () => {
-      await this.thermostatService.getCharacteristic(this.characteristic.TargetHeatingCoolingState).handleGetRequest();
-      await this.thermostatService.getCharacteristic(this.characteristic.CurrentTemperature).handleGetRequest();
-      await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest();
-      this.refreshTimeout();
-    }, 21000);
+
+    return data['value'];
+  }
+
+  private async readSupplyTemperature() {
+    if (this.useSupplySensor) {
+      return this.km200.get('system/sensors/temperatures/supply_t1');
+    }
+
+    try {
+      return await this.km200.get(`heatingCircuits/${this.circuit}/actualSupplyTemperature`);
+    } catch (e) {
+      // Not every KM200 has this resource per circuit and answers with an empty body, a timeout is not a reason to ask again
+      if (e instanceof SyntaxError) {
+        this.useSupplySensor = true;
+        return this.km200.get('system/sensors/temperatures/supply_t1');
+      }
+      throw e;
+    }
+  }
+
+  private async refresh() {
+    // A failed read must not end the refresh cycle
+    await this.thermostatService.getCharacteristic(this.characteristic.TargetHeatingCoolingState).handleGetRequest()
+      .catch(() => undefined);
+    await this.thermostatService.getCharacteristic(this.characteristic.CurrentTemperature).handleGetRequest().catch(() => undefined);
+    await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest().catch(() => undefined);
   }
 }

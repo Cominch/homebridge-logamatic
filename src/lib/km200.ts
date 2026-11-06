@@ -10,6 +10,11 @@ const km200_crypt_md5_salt = new Uint8Array([
   0xff, 0xd8, 0x42, 0xe9, 0x89, 0x5a, 0xd1, 0xe4,
 ]);
 
+// A cached value is at least valid for this long, the read then waits for the KM200
+const CACHE_MIN_AGE_MS = 120000;
+// After a timeout reads fail right away for this long, so they do not pile up in the queue
+const OFFLINE_BACKOFF_MS = 30000;
+
 const timeout = (ms, message) => {
   return new Promise((_, reject) => {
     setTimeout(() => {
@@ -23,6 +28,13 @@ export class KM200 {
   options: unknown;
   log: unknown;
   accessUrl: string;
+
+  private queue: Promise<unknown> = Promise.resolve();
+  private readonly cache = new Map<string, { data: unknown; time: number }>();
+  private readonly pending = new Map<string, Promise<unknown>>();
+  private offlineUntil = 0;
+  private cacheMaxAgeMs = CACHE_MIN_AGE_MS;
+  private readonly pollListeners: (() => Promise<unknown>)[] = [];
 
   constructor() {
     this.aesKey = []; // buffer will be generated on init from accessKey
@@ -121,7 +133,71 @@ export class KM200 {
     ]);
   }
 
-  async get(service: string) {
+  // The KM200 answers slowly when asked in parallel, so all requests run one after the other
+  private enqueue<T>(request: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(request);
+    this.queue = result.catch(() => undefined);
+    return result;
+  }
+
+  private refresh(service: string) {
+    let request = this.pending.get(service);
+    if (!request) {
+      request = this.enqueue(async () => {
+        if (Date.now() < this.offlineUntil) {
+          throw new Error(`KM200 is not reachable (${service}).`);
+        }
+        try {
+          return await this.request(service);
+        } catch (e) {
+          if (!(e instanceof SyntaxError)) {
+            this.offlineUntil = Date.now() + OFFLINE_BACKOFF_MS;
+          }
+          throw e;
+        }
+      })
+        .then(data => {
+          this.cache.set(service, {data, time: Date.now()});
+          return data;
+        })
+        .finally(() => this.pending.delete(service));
+      this.pending.set(service, request);
+    }
+    return request;
+  }
+
+  async get(service: string): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const cached = this.cache.get(service);
+
+    if (cached && Date.now() - cached.time < this.cacheMaxAgeMs) {
+      return cached.data;
+    }
+
+    return this.refresh(service);
+  }
+
+  onPoll(listener: () => Promise<unknown>) {
+    this.pollListeners.push(listener);
+  }
+
+  // Reads all known values from the KM200, then lets the accessories pick them up from the cache
+  startPolling(seconds: number) {
+    this.cacheMaxAgeMs = Math.max(CACHE_MIN_AGE_MS, 3 * seconds * 1000);
+
+    const poll = async () => {
+      for (const service of Array.from(this.cache.keys())) {
+        await this.refresh(service).catch(() => undefined);
+      }
+      for (const listener of this.pollListeners) {
+        await listener().catch(() => undefined);
+      }
+      setTimeout(poll, seconds * 1000);
+    };
+
+    poll();
+  }
+
+  private async request(service: string) {
     this.options = {
       timeout: 500,
       method: 'GET',
@@ -159,6 +235,12 @@ export class KM200 {
   }
 
   async set(service: string, value: unknown) {
+    const result = await this.enqueue(() => this.post(service, value));
+    this.cache.delete(service);
+    return result;
+  }
+
+  private async post(service: string, value: unknown) {
     const post = JSON.stringify({
       value: value,
     });
