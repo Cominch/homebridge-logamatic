@@ -2,6 +2,8 @@ import {AccessoryPlugin, API, HAP, Logging, PlatformConfig, StaticPlatformPlugin
 
 import {LogamaticHeater} from './heater-accessory';
 import {LogamaticWater} from './water-accessory';
+import {LogamaticSolar} from './solar-accessory';
+import {LogamaticPressure} from './pressure-accessory';
 
 import {KM200} from './lib/km200';
 
@@ -33,8 +35,12 @@ export class LogamaticPlatform implements StaticPlatformPlugin {
    */
   accessories(callback: (foundAccessories: AccessoryPlugin[]) => void): void {
     this.km200.getAlways('system/healthStatus')
+      .catch((e) => {
+        // An unreachable KM200 must not take down Homebridge, the accessories recover once it is back
+        this.log.error('Could not reach KM200 at startup: %s', e.message);
+      })
       .finally(() => {
-        callback([
+        const accessories: AccessoryPlugin[] = [
           new LogamaticHeater(
             this.hap,
             this.log,
@@ -49,7 +55,28 @@ export class LogamaticPlatform implements StaticPlatformPlugin {
             this.config,
             this.km200,
           ),
-        ]);
+        ];
+
+        if (this.config.solarCircuit) {
+          accessories.push(new LogamaticSolar(
+            this.hap,
+            this.log,
+            'Solar',
+            this.config,
+            this.km200,
+          ));
+        }
+
+        if (this.config.systemPressure) {
+          accessories.push(new LogamaticPressure(
+            this.hap,
+            this.log,
+            'System Pressure',
+            this.km200,
+          ));
+        }
+
+        callback(accessories);
       });
   }
 }

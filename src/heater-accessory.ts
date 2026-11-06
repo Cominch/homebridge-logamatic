@@ -9,6 +9,9 @@ import {
 
 import {KM200} from './lib/km200';
 
+// The KM200 reports this value when a sensor is missing
+const SENSOR_OPEN = -3276.8;
+
 export class LogamaticHeater implements AccessoryPlugin {
 
   private readonly log: Logging;
@@ -53,7 +56,7 @@ export class LogamaticHeater implements AccessoryPlugin {
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
 
       ));
@@ -77,7 +80,7 @@ export class LogamaticHeater implements AccessoryPlugin {
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
       ))
       .onSet(async (value: CharacteristicValue) => {
@@ -109,15 +112,11 @@ export class LogamaticHeater implements AccessoryPlugin {
       });
 
     this.thermostatService.getCharacteristic(hap.Characteristic.CurrentTemperature)
-      .onGet(async () => (await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`)
-        .then(data => {
-          return data['value'];
-        }).catch(() => {
-          return null;
+      .onGet(async () => (await this.getSupplyTemperature()
+        .catch(() => {
+          throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
         })
-      )
-        ,
-      );
+      ));
 
     this.thermostatService.getCharacteristic(hap.Characteristic.TargetTemperature)
       .setProps({
@@ -140,7 +139,7 @@ export class LogamaticHeater implements AccessoryPlugin {
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
       ))
       .onSet(async (value) => (
@@ -156,7 +155,7 @@ export class LogamaticHeater implements AccessoryPlugin {
             }
           })
           .catch(() => {
-            return null;
+            throw new hap.HapStatusError(hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
           })
       ));
 
@@ -193,14 +192,33 @@ export class LogamaticHeater implements AccessoryPlugin {
     ];
   }
 
+  private async getSupplyTemperature() {
+    const data = await this.km200.get(`heatingCircuits/${this.config.heaterCircuit}/actualSupplyTemperature`)
+      .catch(e => {
+        // Not every KM200 has this resource per circuit and answers with an empty body, a timeout is not a reason to ask again
+        if (e instanceof SyntaxError) {
+          return this.km200.get('system/sensors/temperatures/supply_t1');
+        }
+        throw e;
+      });
+
+    if (data['value'] === SENSOR_OPEN) {
+      throw new Error('Supply temperature sensor is missing');
+    }
+
+    return data['value'];
+  }
+
   refreshTimeout() {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
     }
     this.timeoutId = setTimeout(async () => {
-      await this.thermostatService.getCharacteristic(this.characteristic.TargetHeatingCoolingState).handleGetRequest();
-      await this.thermostatService.getCharacteristic(this.characteristic.CurrentTemperature).handleGetRequest();
-      await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest();
+      // A failed read must not end the refresh cycle
+      await this.thermostatService.getCharacteristic(this.characteristic.TargetHeatingCoolingState).handleGetRequest()
+        .catch(() => undefined);
+      await this.thermostatService.getCharacteristic(this.characteristic.CurrentTemperature).handleGetRequest().catch(() => undefined);
+      await this.thermostatService.getCharacteristic(this.characteristic.TargetTemperature).handleGetRequest().catch(() => undefined);
       this.refreshTimeout();
     }, 21000);
   }

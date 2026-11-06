@@ -40,6 +40,18 @@
         "type": "string",
         "required": true,
         "default": "dhw1"
+      },
+      "solarCircuit": {
+        "title": "Solar Circuit",
+        "type": "string",
+        "required": false,
+        "description": "Optional, e.g. sc1. Adds temperature sensors for the solar collector and the solar tank. Leave empty if you have no solar system."
+      },
+      "systemPressure": {
+        "title": "Show System Pressure",
+        "type": "boolean",
+        "required": false,
+        "description": "Adds a sensor with the system pressure. HomeKit has no pressure sensor, so the value in bar is shown as a temperature."
       }
     }
   }
